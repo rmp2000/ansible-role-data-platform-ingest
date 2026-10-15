@@ -1,0 +1,22 @@
+[Unit]
+Description=Persist Pulsar events in dCache
+After=network-online.target apache-pulsar.service
+Wants=network-online.target apache-pulsar.service
+
+[Service]
+User=data-platform-ingest
+Group=data-platform-ingest
+ExecStart=/opt/apache-pulsar-client/bin/python /usr/local/lib/data-platform-ingest/consumer.py
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/data-platform-ingest
+
+[Install]
+WantedBy=multi-user.target

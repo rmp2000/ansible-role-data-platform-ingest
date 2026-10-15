@@ -1,0 +1,153 @@
+---
+- name: Validate ingestion settings
+  ansible.builtin.assert:
+    that:
+      - ingest_dcache_host | length > 0
+      - ingest_dcache_password | length >= 12
+      - "'-----BEGIN CERTIFICATE-----' in ingest_dcache_ca_pem"
+      - ingest_topic is match('^persistent://platform/events/[a-zA-Z0-9_-]+$')
+      - ingest_subscription is match('^[a-zA-Z0-9_-]+$')
+  no_log: true
+
+- name: Create unprivileged ingestion account
+  ansible.builtin.user:
+    name: data-platform-ingest
+    system: true
+    create_home: false
+    home: /var/lib/data-platform-ingest
+    shell: /usr/sbin/nologin
+
+- name: Create private configuration and status directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: data-platform-ingest
+    mode: '0750'
+  loop:
+    - {path: /etc/data-platform-ingest, owner: root}
+    - {path: /var/lib/data-platform-ingest, owner: data-platform-ingest}
+
+- name: Create program directory
+  ansible.builtin.file:
+    path: /usr/local/lib/data-platform-ingest
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Read local scoped Pulsar token
+  ansible.builtin.slurp:
+    src: /etc/apache-pulsar/client.token
+  register: ingest_scoped_token
+  no_log: true
+
+- name: Read local Pulsar public certificate
+  ansible.builtin.slurp:
+    src: /etc/apache-pulsar/tls/server.crt
+  register: ingest_pulsar_certificate
+
+- name: Install scoped credentials and trusted certificates
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "/etc/data-platform-ingest/{{ item.name }}"
+    owner: root
+    group: data-platform-ingest
+    mode: '0640'
+  loop:
+    - name: client.token
+      content: "{{ ingest_scoped_token.content | b64decode }}"
+    - name: pulsar-ca.crt
+      content: "{{ ingest_pulsar_certificate.content | b64decode }}"
+    - name: dcache-ca.crt
+      content: "{{ ingest_dcache_ca_pem }}"
+  no_log: true
+  notify: Restart data platform ingestion
+
+- name: Install ingestion configuration
+  ansible.builtin.copy:
+    content: >-
+      {{ {'broker_url': 'pulsar+ssl://' ~ ingest_broker_host ~ ':6651',
+          'admin_url': 'https://' ~ ingest_broker_host ~ ':8443',
+          'topic': ingest_topic, 'subscription': ingest_subscription,
+          'pulsar_token_file': '/etc/data-platform-ingest/client.token',
+          'pulsar_ca': '/etc/data-platform-ingest/pulsar-ca.crt',
+          'dcache_url': 'https://' ~ ingest_dcache_host ~ ':' ~ ingest_dcache_port ~ '/data/pulsar-events',
+          'dcache_user': ingest_dcache_user, 'dcache_password': ingest_dcache_password,
+          'dcache_ca': '/etc/data-platform-ingest/dcache-ca.crt'} | to_nice_json }}
+    dest: /etc/data-platform-ingest/config.json
+    owner: root
+    group: data-platform-ingest
+    mode: '0640'
+  no_log: true
+  notify: Restart data platform ingestion
+
+- name: Create the dedicated WebDAV event directory
+  ansible.builtin.uri:
+    url: "https://{{ ingest_dcache_host }}:{{ ingest_dcache_port }}/data/pulsar-events"
+    method: MKCOL
+    user: "{{ ingest_dcache_user }}"
+    password: "{{ ingest_dcache_password }}"
+    force_basic_auth: true
+    ca_path: /etc/data-platform-ingest/dcache-ca.crt
+    status_code: [201, 405]
+  register: ingest_directory
+  changed_when: ingest_directory.status == 201
+  no_log: true
+
+- name: Install consumer program
+  ansible.builtin.copy:
+    src: consumer.py
+    dest: /usr/local/lib/data-platform-ingest/consumer.py
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart data platform ingestion
+
+- name: Install integration verifier
+  ansible.builtin.copy:
+    src: verify_ingestion.py
+    dest: /usr/local/bin/data-platform-ingest-verify
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install ingestion service unit
+  ansible.builtin.template:
+    src: ingest.service.j2
+    dest: /etc/systemd/system/data-platform-ingest.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart data platform ingestion
+
+- name: Apply ingestion configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Start ingestion at boot
+  ansible.builtin.systemd:
+    name: data-platform-ingest
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Verify the real Pulsar to dCache flow and duplicate delivery
+  ansible.builtin.command:
+    argv: [/opt/apache-pulsar-client/bin/python, /usr/local/bin/data-platform-ingest-verify, smoke]
+  changed_when: false
+  when: ingest_verify | bool
+
+- name: Report verified end-to-end ingestion
+  ansible.builtin.debug:
+    msg: DATA_PLATFORM_INGESTION_OK
+  when: ingest_verify | bool
+
+- name: Optionally verify storage failure and broker restart recovery
+  ansible.builtin.command:
+    argv: [/opt/apache-pulsar-client/bin/python, /usr/local/bin/data-platform-ingest-verify, recovery]
+  when: ingest_test_recovery | bool
+
+- name: Report ingestion recovery verification
+  ansible.builtin.debug:
+    msg: DATA_PLATFORM_INGESTION_RECOVERY_OK
+  when: ingest_test_recovery | bool

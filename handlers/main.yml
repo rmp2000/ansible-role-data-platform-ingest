@@ -1,0 +1,6 @@
+---
+- name: Restart data platform ingestion
+  ansible.builtin.systemd:
+    name: data-platform-ingest
+    state: restarted
+    daemon_reload: true

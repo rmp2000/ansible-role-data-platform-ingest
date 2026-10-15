@@ -1,0 +1,11 @@
+---
+ingest_broker_host: 127.0.0.1
+ingest_topic: persistent://platform/events/data-platform
+ingest_subscription: dcache-ingest
+ingest_dcache_host: ""
+ingest_dcache_port: 2880
+ingest_dcache_user: dcacheuser
+ingest_dcache_password: ""
+ingest_dcache_ca_pem: ""
+ingest_verify: true
+ingest_test_recovery: false
