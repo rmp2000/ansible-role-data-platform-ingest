@@ -17,6 +17,19 @@
     home: /var/lib/data-platform-ingest
     shell: /usr/sbin/nologin
 
+- name: Install the pinned client using the system Python interpreter
+  ansible.builtin.pip:
+    name: pulsar-client==3.13.0
+    virtualenv: /opt/data-platform-ingest
+    virtualenv_command: /usr/bin/python3 -m venv
+
+- name: Verify client import as the unprivileged service account
+  ansible.builtin.command:
+    argv: [/opt/data-platform-ingest/bin/python, -c, 'import pulsar']
+  become: true
+  become_user: data-platform-ingest
+  changed_when: false
+
 - name: Create private configuration and status directories
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -133,7 +146,7 @@
 
 - name: Verify the real Pulsar to dCache flow and duplicate delivery
   ansible.builtin.command:
-    argv: [/opt/apache-pulsar-client/bin/python, /usr/local/bin/data-platform-ingest-verify, smoke]
+    argv: [/opt/data-platform-ingest/bin/python, /usr/local/bin/data-platform-ingest-verify, smoke]
   changed_when: false
   when: ingest_verify | bool
 
@@ -144,7 +157,7 @@
 
 - name: Optionally verify storage failure and broker restart recovery
   ansible.builtin.command:
-    argv: [/opt/apache-pulsar-client/bin/python, /usr/local/bin/data-platform-ingest-verify, recovery]
+    argv: [/opt/data-platform-ingest/bin/python, /usr/local/bin/data-platform-ingest-verify, recovery]
   when: ingest_test_recovery | bool
 
 - name: Report ingestion recovery verification

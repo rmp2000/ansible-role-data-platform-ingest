@@ -141,5 +141,6 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Do not expose HTTP authentication headers, configuration or JWTs.
-        print('Integration verification failed: '+type(error).__name__, file=sys.stderr)
+        label = str(error) if type(error) is RuntimeError else type(error).__name__
+        print('Integration verification failed: '+label, file=sys.stderr)
         raise SystemExit(1)

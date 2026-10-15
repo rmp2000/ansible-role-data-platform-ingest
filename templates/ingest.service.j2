@@ -6,7 +6,7 @@ Wants=network-online.target apache-pulsar.service
 [Service]
 User=data-platform-ingest
 Group=data-platform-ingest
-ExecStart=/opt/apache-pulsar-client/bin/python /usr/local/lib/data-platform-ingest/consumer.py
+ExecStart=/opt/data-platform-ingest/bin/python /usr/local/lib/data-platform-ingest/consumer.py
 Environment=PYTHONDONTWRITEBYTECODE=1
 Restart=on-failure
 RestartSec=5

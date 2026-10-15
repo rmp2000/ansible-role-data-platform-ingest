@@ -2,8 +2,10 @@
 
 Ansible glue role for a validated Apache Pulsar VM and a remote HTTPS dCache
 service. Runs an unprivileged systemd consumer on the Pulsar VM. Requires the
-Pulsar client virtualenv, scoped client token and public certificate installed by
-ansible-role-apache-pulsar. The dCache CA must come from a trusted deployment
+scoped client token and public certificate installed by ansible-role-apache-pulsar.
+Installs its own pinned client in `/opt/data-platform-ingest` with the system
+`/usr/bin/python3`, so the service does not depend on IM's Python environment.
+The dCache CA must come from a trusted deployment
 channel; TLS and hostname verification remain enabled.
 
 The dedicated topic is `persistent://platform/events/data-platform`, subscription
